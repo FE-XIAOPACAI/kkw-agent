@@ -15,8 +15,9 @@ interface Message {
 }
 
 const MODELS = [
-  { value: "gpt-5.5", label: "gpt-5.5" },
-  { value: "claude-opus-4-8", label: "claude-opus-4-8" },
+  { value: "gpt-4o-mini", label: "gpt-4o-mini" },
+  { value: "gpt-4o", label: "gpt-4o" },
+  { value: "claude-3-5-sonnet", label: "claude-3-5-sonnet" },
   { value: "kimi-k2.7-code", label: "kimi-k2.7-code" },
   { value: "deepseek-v4-pro", label: "deepseek-v4-pro" },
   { value: "qwen3.8-max", label: "qwen3.8-max" },
