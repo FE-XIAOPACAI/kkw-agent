@@ -1,27 +1,11 @@
-interface ModelOption {
-  value: string;
-  label: string;
-}
-
 interface ChatInputProps {
   value: string;
   onChange: (value: string) => void;
   onSend: () => void;
   disabled?: boolean;
-  model?: string;
-  onModelChange?: (model: string) => void;
-  models?: ModelOption[];
 }
 
-function ChatInput({
-  value,
-  onChange,
-  onSend,
-  disabled,
-  model,
-  onModelChange,
-  models,
-}: ChatInputProps) {
+function ChatInput({ value, onChange, onSend, disabled }: ChatInputProps) {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       onSend();
@@ -30,20 +14,6 @@ function ChatInput({
 
   return (
     <div className="chat-input-container">
-      {models && model && onModelChange && (
-        <select
-          value={model}
-          onChange={(e) => onModelChange(e.target.value)}
-          disabled={disabled}
-          className="model-select"
-        >
-          {models.map((m) => (
-            <option key={m.value} value={m.value}>
-              {m.label}
-            </option>
-          ))}
-        </select>
-      )}
       <input
         type="text"
         value={value}

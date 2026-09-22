@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import ChatMessage from "./components/ChatMessage";
 import ChatInput from "./components/ChatInput";
+import ModelSelector from "./components/ModelSelector";
 import "./App.css";
 
 interface Step {
@@ -14,14 +15,10 @@ interface Message {
   steps?: Step[];
 }
 
-const MODELS = [
-  { value: "gpt-4o-mini", label: "gpt-4o-mini" },
-  { value: "gpt-4o", label: "gpt-4o" },
-  { value: "claude-3-5-sonnet", label: "claude-3-5-sonnet" },
-  { value: "kimi-k2.7-code", label: "kimi-k2.7-code" },
-  { value: "deepseek-v4-pro", label: "deepseek-v4-pro" },
-  { value: "qwen3.8-max", label: "qwen3.8-max" },
-];
+interface ModelOption {
+  value: string;
+  label: string;
+}
 
 function getStoredSessionId(): string {
   const stored = localStorage.getItem("agent-session-id");
@@ -35,8 +32,24 @@ function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [model, setModel] = useState(MODELS[0].value);
+  const [models, setModels] = useState<ModelOption[]>([]);
+  const [model, setModel] = useState("");
   const [sessionId] = useState<string>(getStoredSessionId());
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, isLoading]);
+
+  useEffect(() => {
+    fetch("/models")
+      .then((res) => res.json())
+      .then((data: ModelOption[]) => {
+        setModels(data);
+        if (data.length > 0) setModel(data[0].value);
+      })
+      .catch((error) => console.error("加载模型列表失败:", error));
+  }, []);
 
   const handleSend = async () => {
     if (!input.trim() || isLoading) return;
@@ -102,6 +115,12 @@ function App() {
     <div className="app">
       <header className="header">
         <h1>🤖 Agent Chat</h1>
+        <ModelSelector
+          models={models}
+          model={model}
+          onModelChange={setModel}
+          disabled={isLoading}
+        />
       </header>
       <div className="chat-container">
         {messages.length === 0 && (
@@ -111,15 +130,13 @@ function App() {
           <ChatMessage key={index} message={msg} />
         ))}
         {isLoading && <div className="loading">Agent 思考中...</div>}
+        <div ref={bottomRef} />
       </div>
       <ChatInput
         value={input}
         onChange={setInput}
         onSend={handleSend}
         disabled={isLoading}
-        model={model}
-        onModelChange={setModel}
-        models={MODELS}
       />
     </div>
   );
