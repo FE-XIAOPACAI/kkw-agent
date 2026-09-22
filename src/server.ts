@@ -6,6 +6,7 @@ import { LLM } from "./llm";
 import { Agent } from "./agent";
 import { Memory } from "./memory";
 import { tools } from "./tools";
+import { getModels, findModel } from "./modelRegistry";
 
 const app = express();
 app.use(cors());
@@ -19,15 +20,25 @@ if (!apiKey) {
   process.exit(1);
 }
 
-// 每个会话一个 Agent
+// 每个会话一份共享记忆，切换模型不丢历史
+const memories = new Map<string, Memory>();
+// 每个会话+模型一个 Agent（迭代状态隔离），但共享同一会话记忆
 const agents = new Map<string, Agent>();
 
 function createLLM(model?: string): LLM {
+  const config = findModel(model);
   return new LLM({
     apiKey,
-    baseURL: process.env.OPENAI_BASE_URL,
-    model: model ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini",
+    baseURL: config?.baseURL ?? process.env.OPENAI_BASE_URL,
+    model: config?.value ?? process.env.OPENAI_MODEL ?? "gpt-4o-mini",
   });
+}
+
+function getMemory(sessionId: string): Memory {
+  if (!memories.has(sessionId)) {
+    memories.set(sessionId, new Memory());
+  }
+  return memories.get(sessionId)!;
 }
 
 function getAgent(sessionId: string, model?: string): Agent {
@@ -38,13 +49,17 @@ function getAgent(sessionId: string, model?: string): Agent {
       new Agent({
         llm: createLLM(model),
         tools,
-        memory: new Memory(),
+        memory: getMemory(sessionId),
         maxIterations: 10,
       })
     );
   }
   return agents.get(key)!;
 }
+
+app.get("/models", (_req, res) => {
+  res.json(getModels());
+});
 
 app.post("/chat", async (req, res) => {
   const { sessionId = "default", message, model } = req.body;

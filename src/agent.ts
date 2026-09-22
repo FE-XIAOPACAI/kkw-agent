@@ -32,11 +32,17 @@ export class Agent {
   async run(input: string): Promise<string> {
     this.memory.add({ role: "user", content: input });
 
+    let lastObservation: string | undefined;
+    const calledTools = new Set<string>();
+
     for (let i = 0; i < this.maxIterations; i++) {
       const messages = this.buildMessages();
       const response = await this.llm.chat(messages);
-
       const parsed = this.parseLLMOutput(response);
+
+      if (parsed.thought) {
+        // run 不流式输出 thought，仅记录到记忆以保持上下文连贯
+      }
 
       if (parsed.finalAnswer) {
         this.memory.add({ role: "assistant", content: parsed.finalAnswer });
@@ -44,21 +50,42 @@ export class Agent {
       }
 
       if (parsed.action) {
+        const callKey = `${parsed.action}:${parsed.actionInput ?? ""}`;
+        if (calledTools.has(callKey)) {
+          // 重复调用同一工具+相同参数，提示 LLM 用已有结果作答
+          this.memory.add({
+            role: "user",
+            content: `Observation: 已调用过 ${parsed.action}，请直接基于已有结果输出 Final Answer。`,
+          });
+          continue;
+        }
+        calledTools.add(callKey);
         const observation = await this.executeTool(parsed.action, parsed.actionInput);
-        this.memory.add({ role: "assistant", content: `Observation: ${observation}` });
+        lastObservation = observation;
+        this.memory.add({ role: "user", content: `Observation: ${observation}` });
+      } else {
+        // 空输出或无法识别的格式：提示 LLM 给出 Final Answer，避免空转
+        this.memory.add({
+          role: "user",
+          content: `Observation: 请根据以上信息直接输出 Final Answer。`,
+        });
       }
     }
 
-    return "超过最大迭代次数，未能完成任务。";
+    return lastObservation
+      ? `未能完成任务，最近一次工具结果：${lastObservation}`
+      : "超过最大迭代次数，未能完成任务。";
   }
 
   async *runStream(input: string): AsyncGenerator<{ type: "thought" | "action" | "observation" | "answer"; content: string }> {
     this.memory.add({ role: "user", content: input });
 
+    let lastObservation: string | undefined;
+    const calledTools = new Set<string>();
+
     for (let i = 0; i < this.maxIterations; i++) {
       const messages = this.buildMessages();
       const response = await this.llm.chat(messages);
-
       const parsed = this.parseLLMOutput(response);
 
       if (parsed.thought) {
@@ -72,14 +99,35 @@ export class Agent {
       }
 
       if (parsed.action) {
+        const callKey = `${parsed.action}:${parsed.actionInput ?? ""}`;
+        if (calledTools.has(callKey)) {
+          this.memory.add({
+            role: "user",
+            content: `Observation: 已调用过 ${parsed.action}，请直接基于已有结果输出 Final Answer。`,
+          });
+          continue;
+        }
+        calledTools.add(callKey);
         yield { type: "action", content: `${parsed.action}(${parsed.actionInput ?? ""})` };
         const observation = await this.executeTool(parsed.action, parsed.actionInput);
-        this.memory.add({ role: "assistant", content: `Observation: ${observation}` });
+        lastObservation = observation;
+        this.memory.add({ role: "user", content: `Observation: ${observation}` });
         yield { type: "observation", content: observation };
+      } else {
+        // 空输出或无法识别的格式：提示 LLM 给出 Final Answer，避免空转
+        this.memory.add({
+          role: "user",
+          content: `Observation: 请根据以上信息直接输出 Final Answer。`,
+        });
       }
     }
 
-    yield { type: "answer", content: "超过最大迭代次数，未能完成任务。" };
+    yield {
+      type: "answer",
+      content: lastObservation
+        ? `未能完成任务，最近一次工具结果：${lastObservation}`
+        : "超过最大迭代次数，未能完成任务。",
+    };
   }
 
   private buildMessages(): Message[] {
@@ -128,9 +176,12 @@ Final Answer: 最终答案
       return { finalAnswer: finalAnswerMatch[1].trim() };
     }
 
-    // 如果 LLM 没有输出 Final Answer，也没有 Action，则把整个输出当作最终答案
+    // 如果 LLM 没有输出 Final Answer，也没有 Action：
+    // - 有非空内容则当作最终答案
+    // - 空输出则返回空对象，由调用方提示 LLM 重新作答，避免空转
     if (!actionMatch) {
-      return { finalAnswer: output.trim() };
+      const trimmed = output.trim();
+      return trimmed ? { finalAnswer: trimmed } : {};
     }
 
     const result: ParsedOutput = {};
